@@ -140,4 +140,4 @@ for n_buildings in [2, 4, 8]:
     plt.xlabel('Time step')
     plt.title('Carbon Intensity Profile')
     plt.savefig(os.path.join(results_dir, 'carbon_intensity.png'))
-    print('--------------------------------------------------------------------------------------------------------------------------\n\n\n', flush=True)
+    print('----------------------------------------------------------------------------------------\n', flush=True)
