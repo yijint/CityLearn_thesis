@@ -82,8 +82,7 @@ def mpc_district_optimization_2022(buildings, building_datasets, time_step, sche
             min_soc_factor = 1-max_discharge
         else:
             min_soc_factor = 0.0
-        min_soc = min_soc_factor * capacity
-        max_soc = capacity
+        max_soc_factor = 1
 
         # CVXPY Variables for Battery
         action = cp.Variable(effective_N, name=f"action_b{b_idx}") # Action: [-1, 1] proportion of kWh
@@ -120,12 +119,13 @@ def mpc_district_optimization_2022(buildings, building_datasets, time_step, sche
 
             # SoC Update (Physics)
             # Uses the actual charge/discharge energy achieved, considering efficiency.
-            soc_update = efficiency * charge_energy[t] - discharge_energy[t] / efficiency
+            energy_change = efficiency * charge_energy[t] - discharge_energy[t] / efficiency
+            soc_update = energy_change / capacity
             all_constraints.append(soc[t + 1] == soc[t] + soc_update)
 
             # SoC Bounds
-            all_constraints.append(soc[t + 1] >= min_soc)
-            all_constraints.append(soc[t + 1] <= max_soc)
+            all_constraints.append(soc[t + 1] >= min_soc_factor)
+            all_constraints.append(soc[t + 1] <= max_soc_factor)
     
         # Calculate CVXPY expression for this building's net load
         forecast = building_forecasts[active_idx] # Use the mapped active index
