@@ -1,0 +1,95 @@
+Running experiment for 2 buildings
+Selected buildings: ['Building_8', 'Building_10']
+Current time step: 0
+environment number of time steps: 8760
+environment uses central agent: True
+Number of buildings: 2
+/home/jt9744/.conda/envs/thesis_v2/lib/python3.9/site-packages/cvxpy/problems/problem.py:1504: UserWarning: Solution may be inaccurate. Try another solver, adjusting the solver settings, or solve with verbose=True for more information.
+  warnings.warn(
+Step: 672/8759, Time elapsed: 1.7 minutes, Estimated time remaining: 20.6 minutes
+Step: 1344/8759, Time elapsed: 3.4 minutes, Estimated time remaining: 18.9 minutes
+Step: 2016/8759, Time elapsed: 5.1 minutes, Estimated time remaining: 17.2 minutes
+Step: 2688/8759, Time elapsed: 6.9 minutes, Estimated time remaining: 15.5 minutes
+Step: 3360/8759, Time elapsed: 8.6 minutes, Estimated time remaining: 13.8 minutes
+Step: 4032/8759, Time elapsed: 10.3 minutes, Estimated time remaining: 12.1 minutes
+Step: 4704/8759, Time elapsed: 12.0 minutes, Estimated time remaining: 10.4 minutes
+Step: 5376/8759, Time elapsed: 13.8 minutes, Estimated time remaining: 8.7 minutes
+Step: 6048/8759, Time elapsed: 15.5 minutes, Estimated time remaining: 7.0 minutes
+Step: 6720/8759, Time elapsed: 17.3 minutes, Estimated time remaining: 5.2 minutes
+Step: 7392/8759, Time elapsed: 19.0 minutes, Estimated time remaining: 3.5 minutes
+Step: 8064/8759, Time elapsed: 20.8 minutes, Estimated time remaining: 1.8 minutes
+Step: 8736/8759, Time elapsed: 22.5 minutes, Estimated time remaining: 0.1 minutes
+Step: 8758/8759, Time elapsed: 22.5 minutes, Estimated time remaining: 0.0 minutes
+
+Simulation finished.
+Total time steps executed: 8759
+Total time taken: 22.55 minutes
+Average time per step: 0.154 seconds
+Total accumulated reward: -15584.62
+
+Saving results to results/results_mpc_2022_centralized/2_buildings...
+----------------------------------------------------------------------------------------
+
+Running experiment for 4 buildings
+Selected buildings: ['Building_2', 'Building_5', 'Building_8', 'Building_10']
+Current time step: 0
+environment number of time steps: 8760
+environment uses central agent: True
+Number of buildings: 4
+/home/jt9744/.conda/envs/thesis_v2/lib/python3.9/site-packages/cvxpy/problems/problem.py:1504: UserWarning: Solution may be inaccurate. Try another solver, adjusting the solver settings, or solve with verbose=True for more information.
+  warnings.warn(
+Step: 672/8759, Time elapsed: 3.5 minutes, Estimated time remaining: 41.9 minutes
+Step: 1344/8759, Time elapsed: 7.0 minutes, Estimated time remaining: 38.4 minutes
+Step: 2016/8759, Time elapsed: 10.4 minutes, Estimated time remaining: 34.8 minutes
+Step: 2688/8759, Time elapsed: 13.9 minutes, Estimated time remaining: 31.3 minutes
+Step: 3360/8759, Time elapsed: 17.3 minutes, Estimated time remaining: 27.8 minutes
+Step: 4032/8759, Time elapsed: 20.8 minutes, Estimated time remaining: 24.4 minutes
+Step: 4704/8759, Time elapsed: 24.3 minutes, Estimated time remaining: 20.9 minutes
+Step: 5376/8759, Time elapsed: 27.7 minutes, Estimated time remaining: 17.4 minutes
+Step: 6048/8759, Time elapsed: 31.2 minutes, Estimated time remaining: 14.0 minutes
+Step: 6720/8759, Time elapsed: 34.7 minutes, Estimated time remaining: 10.5 minutes
+Step: 7392/8759, Time elapsed: 38.2 minutes, Estimated time remaining: 7.1 minutes
+Step: 8064/8759, Time elapsed: 41.7 minutes, Estimated time remaining: 3.6 minutes
+Step: 8736/8759, Time elapsed: 45.1 minutes, Estimated time remaining: 0.1 minutes
+Step: 8758/8759, Time elapsed: 45.2 minutes, Estimated time remaining: 0.0 minutes
+
+Simulation finished.
+Total time steps executed: 8759
+Total time taken: 45.21 minutes
+Average time per step: 0.310 seconds
+Total accumulated reward: -27304.94
+
+Saving results to results/results_mpc_2022_centralized/4_buildings...
+----------------------------------------------------------------------------------------
+
+Running experiment for 8 buildings
+Selected buildings: ['Building_2', 'Building_5', 'Building_6', 'Building_7', 'Building_8', 'Building_10', 'Building_13', 'Building_16']
+Current time step: 0
+environment number of time steps: 8760
+environment uses central agent: True
+Number of buildings: 8
+/home/jt9744/.conda/envs/thesis_v2/lib/python3.9/site-packages/cvxpy/problems/problem.py:1504: UserWarning: Solution may be inaccurate. Try another solver, adjusting the solver settings, or solve with verbose=True for more information.
+  warnings.warn(
+Step: 672/8759, Time elapsed: 6.9 minutes, Estimated time remaining: 83.4 minutes
+Step: 1344/8759, Time elapsed: 13.8 minutes, Estimated time remaining: 76.3 minutes
+Step: 2016/8759, Time elapsed: 20.7 minutes, Estimated time remaining: 69.4 minutes
+Step: 2688/8759, Time elapsed: 27.7 minutes, Estimated time remaining: 62.5 minutes
+Step: 3360/8759, Time elapsed: 34.4 minutes, Estimated time remaining: 55.2 minutes
+Step: 4032/8759, Time elapsed: 41.1 minutes, Estimated time remaining: 48.2 minutes
+Step: 4704/8759, Time elapsed: 47.8 minutes, Estimated time remaining: 41.2 minutes
+Step: 5376/8759, Time elapsed: 54.6 minutes, Estimated time remaining: 34.3 minutes
+Step: 6048/8759, Time elapsed: 61.2 minutes, Estimated time remaining: 27.4 minutes
+Step: 6720/8759, Time elapsed: 67.9 minutes, Estimated time remaining: 20.6 minutes
+Step: 7392/8759, Time elapsed: 74.6 minutes, Estimated time remaining: 13.8 minutes
+Step: 8064/8759, Time elapsed: 81.2 minutes, Estimated time remaining: 7.0 minutes
+Step: 8736/8759, Time elapsed: 87.8 minutes, Estimated time remaining: 0.2 minutes
+Step: 8758/8759, Time elapsed: 88.0 minutes, Estimated time remaining: 0.0 minutes
+
+Simulation finished.
+Total time steps executed: 8759
+Total time taken: 87.99 minutes
+Average time per step: 0.603 seconds
+Total accumulated reward: -53949.15
+
+Saving results to results/results_mpc_2022_centralized/8_buildings...
+----------------------------------------------------------------------------------------
