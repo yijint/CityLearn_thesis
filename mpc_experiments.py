@@ -96,7 +96,7 @@ for n_buildings in [2, 4, 8]:
     performance = performance[performance['cost_function'].isin(kpis.keys())].reset_index(drop=True)
     
     # save evaluation
-    results_dir = f'results/results_mpc_2022_centralized/{n_buildings}_buildings'
+    results_dir = f'results/results_mpc_2022_centralized/{n_buildings}_buildings_scs_n48'
     os.makedirs(results_dir, exist_ok=True)
     print(f"\nSaving results to {results_dir}...", flush=True)
     joblib.dump(total_actions_log_np, os.path.join(results_dir, 'total_actions.joblib'))
