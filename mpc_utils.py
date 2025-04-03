@@ -1,246 +1,180 @@
-# Code is written to reproduce and adapt the MPC designed in 
-# https://www.e3s-conferences.org/articles/e3sconf/abs/2023/33/e3sconf_iaqvec2023_04018/e3sconf_iaqvec2023_04018.html
+# helper functions for implemeting MPC with perfect forecast
 
-import torch
-import torch.nn as nn
-import numpy as np
+# System operations
 import os
-from sklearn.preprocessing import StandardScaler
-from torch.utils.data import DataLoader, TensorDataset
-import joblib  # for saving the scaler
+import time
+import matplotlib.pyplot as plt
+import json
+import numpy as np
+import pandas as pd
+from citylearn.citylearn import CityLearnEnv
+from citylearn.data import DataSet
 
-# Define LSTM-based forecasting model
-class LSTMForecaster(nn.Module):
-    def __init__(self, 
-                 n_buildings, 
-                 hidden_size=128, # to be finetuned
-                 output_size=2, # forecasted load, forecasted solar power generation
-                 num_layers=2 # to be finetuned
-                ):
-        """
-        LSTM model to forecast future electricity load and solar power generation.
-        """
-        super(LSTMForecaster, self).__init__()
-        input_size = (25 + 3*n_buildings) + 2 # data + sin-encoded timestamp, cos-encoded timestanp
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)
-        
-    def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        return self.fc(lstm_out[:, -1, :])  # Predict next time step based on final time step
+# helper functions
+from kpi_utils import get_kpis, plot_building_kpis, plot_district_kpis
+from kpi_utils import plot_building_load_profiles, plot_district_load_profiles, plot_battery_soc_profiles, plot_simulation_summary
+from env_utils import set_n_buildings_2022
 
-def preprocess_data(data, timestamps):
+# packages for MPC
+import cvxpy as cp
+import joblib
+
+def mpc_district_optimization_2022(buildings, building_datasets, time_step, schema):
     """
-    Standardizes data and encodes timestamps using both sine and cosine transformations.
-    """
-    from sklearn.preprocessing import StandardScaler
-    scaler = StandardScaler()
-    data_scaled = scaler.fit_transform(data)
+    Computes optimal charge/discharge actions for ALL buildings' batteries
+    over an N-hour horizon to minimize total district cost and carbon emissions.
+    Adapted for CityLearn 2022 (battery control only).
 
-    # Encode time with sin-cos transformation
-    time_sin = np.sin((timestamps % 24) * (2 * np.pi / 24)).reshape(-1, 1)
-    time_cos = np.cos((timestamps % 24) * (2 * np.pi / 24)).reshape(-1, 1)
-
-    return np.hstack([data_scaled, time_sin, time_cos])  # Combine features
-
-# Forecasting function with Recursive Multi-Step Prediction
-def forecast(model, input_data, steps=12):
-    """
-    Forecasts future electricity load and solar power generation using an LSTM model.
-    Performs recursive one-step-ahead prediction for 12 time steps.
-    12 time steps is the control horizon defined in this paper. 
-    """
-    model.eval()
-    predictions = []
-    current_input = input_data.unsqueeze(0)  # Add batch dimension
-
-    for _ in range(steps):
-        with torch.no_grad():
-            pred = model(current_input)  # Predict next step
-        predictions.append(pred.numpy())  # Store the prediction
-        
-        # Append prediction to input and remove oldest time step
-        pred_expanded = torch.cat((current_input[:, 1:, :], pred.unsqueeze(1)), dim=1)
-        current_input = pred_expanded
-
-    return np.array(predictions)  # Return full forecasted sequence
-
-# Define MPC optimization function
-def mpc_optimization(forecasted_load, forecasted_pv, 
-                     price, carbon_intensity, battery):
-    """
-    Computes the optimal battery action over a 12-hour control horizon to minimize cost.
-    
     Parameters:
-    - forecasted_load (array): Forecasted electricity demand over the next 12 hours.
-    - forecasted_pv (array): Forecasted solar generation over the next 12 hours.
-    - price (array): Electricity price per kWh over the next 12 hours.
-    - carbon_intensity (array): Carbon intensity per kWh over the next 12 hours.
-    - battery (citylearn.energy_model.Battery): Battery model
+    - buildings: List of CityLearn Building objects
+    - building_datasets: Pre-loaded datasets for each building in buildings
+    - time_step: Current simulation time step
+    - schema: Environment schema
 
     Returns:
-    - First action in the optimal sequence.
+    - flat_actions: A flat list of battery actions [b1_batt_action, b2_batt_action, ...]
+                   for the first timestep. Returns None if optimization fails.
     """
-    from scipy.optimize import minimize
-    
-    def objective(actions):
-        total_cost = 0
-        q_cost, q_carbon = 2, 1  # Weighing factors (fine-tuned in the paper's test case 2)
+    # hyperparams based on https://doi.org/10.1051/e3sconf/202339604018
+    N = 12 # Prediction horizon 
+    COST_WEIGHT = 2.0 
+    EMISSION_WEIGHT = 1.0 
 
-        for t in range(len(actions)):
-            battery.charge(actions[t]*battery.capacity)
+    # initialize data structures
+    num_buildings = len(buildings)
+    all_constraints = []
+    all_building_net_loads_vars = [] # Stores CVXPY expression for each building's net load
+    all_battery_vars = {} # Dict: all_battery_vars[b_idx] stores battery variables
+    ordered_action_vars = [] # Store action vars in the order expected by env.step
 
-            # Compute net load on the grid
-            net_load = forecasted_load[t] - forecasted_pv[t] - actions[t]*battery.capacity # negative means selling to the grid
-            cost = q_cost * price[t] * net_load + q_carbon * carbon_intensity[t] * net_load
-            total_cost += cost
+    # Determine Effective Horizon
+    effective_N = min(N, schema['simulation_end_time_step'] - time_step)
+    assert effective_N >= 0, 'effective_N cannot be negative'
 
-        return total_cost
+    # 1. Gather Forecasts and Define Variables/Constraints for ALL buildings
+    building_forecasts = []
+    active_building_indices_map = {} # Map original building index to filtered index
 
-    # Optimization using Powell's method 
-    # (this is what the paper used, I am sticking with it since the efficiency curve
-    # is piecewise, so a gradient-based approach like L-BFGS-B might not be appropriate
-    initial_guess = -np.sign(price[:12] - np.mean(price[:12])) # Charge fully when price is low, discharge fully when price is high
-    res = minimize(objective, initial_guess, bounds=[(-1.0, 1.0)] * 12, method='Powell')
-    return res.x[0]  # Return first action in the optimal sequence
+    for b_idx, b in enumerate(buildings):
+        # Map original index to the index in filtered lists (forecasts, net_loads)
+        active_idx = len(building_forecasts)
+        active_building_indices_map[b_idx] = active_idx
 
-# # Battery model 
-# # The power value can be negative, which means the battery is releasing energy. 
-# class BatteryModel:
-#     def __init__(self, capacity, nominal_power):
-#         """
-#         Battery model with dynamically calculated efficiency and power constraints.
-
-#         Parameters:
-#         - capacity (float): Maximum energy capacity of the battery in kWh.
-#         - nominal_power (float): Maximum charging/discharging power in kW.
-#         """
-#         self.capacity = capacity # kWh
-#         self.nominal_power = abs(nominal_power) # kW
-#         self.soc = 0.5 * capacity  # Start battery at 50% SOC
-
-#     def get_efficiency(self, power):
-#         """Returns efficiency dynamically based on power level."""
-#         # Use efficiency curve from charging data provided by Tesla users,
-#         # illsutrated in Figure 6 from https://arxiv.org/pdf/2012.10504
-#         pu_power_levels = np.array([0.0, 0.3, 0.7, 0.8, 1.0])  # fraction / per unit basis of nominal power
-#         pu_power_efficiency_values = np.array([0.83, 0.83, 0.90, 0.90, 0.85])  # efficiency at each per unit basis power level
-#         pu_power = abs(power) / self.nominal_power  # Convert to per-unit
-#         return np.interp(pu_power, pu_power_levels, pu_power_efficiency_values)
-
-#     def update(self, action):
-#         """
-#         Updates battery SOC based on charging/discharging action.
-
-#         Parameters:
-#         - action (float): Charging (-1 to 1), where:
-#             - Positive values means charging
-#             - Negative values means discharging
+        ds = building_datasets[b.name]
+        elec_load = ds['non_shiftable_load'].values[time_step:time_step + effective_N]
+        pv_gen = ds['solar_generation'].values[time_step:time_step + effective_N]
+        price = b.pricing.electricity_pricing[time_step:time_step + effective_N]
+        carbon = b.carbon_intensity.carbon_intensity[time_step:time_step + effective_N]
         
-#         Returns:
-#         - New SOC after applying action
-#         """
-#         # Compute actual battery power (limited by nominal power)
-#         power = np.clip(action * self.nominal_power, -self.nominal_power, self.nominal_power)
+        building_forecasts.append({
+            'elec': elec_load, 'pv': pv_gen, 'price': price, 'carbon': carbon
+        })
 
-#         # Dynamic power efficiency
-#         efficiency = self.get_efficiency(power)
-#         if power > 0:  # Power charged decreases
-#             adjusted_power = power * efficiency
-#         else:  # Power discharged increases
-#             adjusted_power = power / efficiency 
-            
-#         # Update SOC and enforce limits
-#         self.soc = np.clip(self.soc + adjusted_power, 0, self.capacity)
-#         return self.soc
+        # Battery Device Properties
+        dev = b.electrical_storage
+        capacity = dev.capacity
+        efficiency = dev.efficiency
+        soc_init = dev.soc[time_step] # Current state of charge in kWh        
+        nominal_power = dev.nominal_power
+        # Get min/max SOC limits
+        max_discharge = dev.depth_of_discharge if hasattr(dev, 'depth_of_discharge') else 1.0 # Assumes DoD maps to min SoC limit
+        if max_discharge:
+            min_soc_factor = 1-max_discharge
+        else:
+            min_soc_factor = 0.0
+        min_soc = min_soc_factor * capacity
+        max_soc = capacity
 
-# Train LSTM
-# Hyperparameters 
-LOOKBACK = 8
-PREDICT_HORIZON = 1 # one-step prediction
-BATCH_SIZE = 32
-EPOCHS = 50
-LEARNING_RATE = 0.001
-MODEL_PATH = 'lstm_model.pt'
-SCALER_PATH = 'scaler.gz'
+        # CVXPY Variables for Battery
+        action = cp.Variable(effective_N, name=f"action_b{b_idx}") # Action: [-1, 1] proportion of kWh
+        soc = cp.Variable(effective_N + 1, name=f"soc_b{b_idx}")
+        charge_energy = cp.Variable(effective_N, nonneg=True, name=f"charge_b{b_idx}")
+        discharge_energy = cp.Variable(effective_N, nonneg=True, name=f"discharge_b{b_idx}")
 
-# prepare training data 
-def prepare_data(x_data, y_data):
-    scaler = StandardScaler()
-    x_scaled = scaler.fit_transform(x_data)
+        # Store action var for final extraction in the correct order
+        ordered_action_vars.append(action)
 
-    X, y = [], []
-    for i in range(len(x_scaled) - LOOKBACK - PREDICT_HORIZON + 1):
-        X.append(x_scaled[i:i+LOOKBACK])
-        y.append(y_data[i+LOOKBACK])
+        # Store all vars for objective/constraint calculation
+        all_battery_vars[b_idx] = {
+            'action': action, 'soc': soc, 'charge': charge_energy,
+            'discharge': discharge_energy, 'capacity': capacity,
+            'efficiency': efficiency, 'nominal_power': nominal_power
+        }
 
-    return np.array(X), np.array(y), scaler
+        # CVXPY Constraints for Battery
+        all_constraints.append(soc[0] == soc_init)
+        all_constraints.append(cp.abs(action) <= 1) # Action interpretation [-1, 1]
 
-# train and save LSTM model 
-def train_and_save_lstm(X_train, y_train, n_buildings):
-    X_train = torch.tensor(X_train, dtype=torch.float32).unsqueeze(-1)
-    y_train = torch.tensor(y_train, dtype=torch.float32).unsqueeze(-1)
+        for t in range(effective_N):
+            # The *target* net energy transfer (before efficiency) is action * capacity.
+            # The actual charge/discharge energy variables must equal this target,
+            # while also respecting power limits.
 
-    dataset = TensorDataset(X_train, y_train)
-    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+            target_net_energy_transfer = action[t] * capacity # kWh target
+            all_constraints.append(charge_energy[t] - discharge_energy[t] == target_net_energy_transfer)
 
-    model = LSTMForecaster(n_buildings=n_buildings)
-    criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+            # Apply Power Limits
+            # The actual energy charged or discharged in 1 hour cannot exceed nominal power (kW * 1h = kWh)
+            all_constraints.append(charge_energy[t] <= nominal_power)
+            all_constraints.append(discharge_energy[t] <= nominal_power)
 
-    for epoch in range(EPOCHS):
-        for batch_X, batch_y in loader:
-            pred = model(batch_X)
-            loss = criterion(pred, batch_y)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch {epoch+1}/{EPOCHS}, Loss: {loss.item():.4f}")
+            # SoC Update (Physics)
+            # Uses the actual charge/discharge energy achieved, considering efficiency.
+            soc_update = efficiency * charge_energy[t] - discharge_energy[t] / efficiency
+            all_constraints.append(soc[t + 1] == soc[t] + soc_update)
 
-    # Save model
-    torch.save(model.state_dict(), MODEL_PATH)
-    print(f"Model saved to {MODEL_PATH}")
-    return model
+            # SoC Bounds
+            all_constraints.append(soc[t + 1] >= min_soc)
+            all_constraints.append(soc[t + 1] <= max_soc)
+    
+        # Calculate CVXPY expression for this building's net load
+        forecast = building_forecasts[active_idx] # Use the mapped active index
+        battery_vars = all_battery_vars[b_idx]
 
-def save_scaler(scaler):
-    joblib.dump(scaler, SCALER_PATH)
-    print(f"Scaler saved to {SCALER_PATH}")
+        # Net Load = Base Load - PV Generation + Battery Net Load 
+        building_net_load = forecast['elec'] - forecast['pv'] + charge_energy - discharge_energy
+        all_building_net_loads_vars.append(building_net_load) # Append in order of active buildings
 
-def load_model(n_buildings):
-    model = LSTMForecaster(n_buildings=n_buildings)
-    model.load_state_dict(torch.load(MODEL_PATH))
-    model.eval()
-    return model
+    # 2. Define District Objective
+    total_dollar_cost = 0
+    total_emission_cost = 0
 
-def load_scaler():
-    return joblib.load(SCALER_PATH)
+    # Iterate through the filtered lists using active index 'i'
+    for i in range(len(all_building_net_loads_vars)):
+        forecast = building_forecasts[i]
+        building_net_load = all_building_net_loads_vars[i]
 
-    # # Simulate example data
-    # time = np.arange(0, 500)
-    # series = np.sin(2 * np.pi * time / 24) + 0.1 * np.random.randn(len(time))
+        # Cost: sum over time of positive net load * price
+        building_cost = cp.sum(cp.multiply(cp.pos(building_net_load), forecast['price']))
+        total_dollar_cost += building_cost
 
-    # X, y, scaler = prepare_data(series)
-    # model = train_and_save_lstm(X, y)
-    # save_scaler(scaler)
+        # Emissions: sum over time of positive net load * carbon intensity
+        building_emissions = cp.sum(cp.multiply(cp.pos(building_net_load), forecast['carbon']))
+        total_emission_cost += building_emissions
 
-    # # Example recursive forecast
-    # model = load_model()
-    # scaler = load_scaler()
+    objective = cp.Minimize(COST_WEIGHT * total_dollar_cost + EMISSION_WEIGHT * total_emission_cost)
 
-    # x_input = torch.tensor(X[-1:], dtype=torch.float32).unsqueeze(-1)
-    # predictions = []
-    # current_input = x_input.clone()
+    # 3. Solve the Optimization Problem
+    try:
+        problem = cp.Problem(objective, all_constraints)
+        problem.solve(solver=cp.ECOS, verbose=False)
+    except cp.error.SolverError as e:
+        print(f"CVXPY SolverError at time step {time_step}: {e}")
+    except Exception as e:
+        print(f"Unexpected error during optimization at step {time_step}: {e}")
 
-    # for _ in range(12):  # 12-hour forecast
-    #     with torch.no_grad():
-    #         pred = model(current_input)
-    #     predictions.append(pred.item())
-
-    #     # Update input sequence
-    #     new_input = torch.cat([current_input[:, 1:, :], pred.unsqueeze(0).unsqueeze(-1)], dim=1)
-    #     current_input = new_input
-
-    # # Inverse scale
-    # predictions = scaler.inverse_transform(np.array(predictions).reshape(-1, 1)).flatten()
-    # print("Next 12-hour forecast:", predictions)
+    # 4. Extract Actions for the First Timestep
+    if problem.status in [cp.OPTIMAL, cp.OPTIMAL_INACCURATE]:
+        first_step_actions = []
+        for action_var in ordered_action_vars: # Use the ordered list of action variables
+             if action_var.value is not None:
+                 action_val = np.clip(action_var.value[0], -1.0, 1.0) # Clip for safety
+                 first_step_actions.append(action_val)
+             else:
+                 print(f"Warning: Optimal status but None value for action variable {action_var.name()} at step {time_step}. Using 0.0.")
+                 first_step_actions.append(0.0)
+        return first_step_actions
+    else:
+        print(f"Warning: Optimization problem status at step {time_step}: {problem.status}. Using 0.0 actions.")
+        zero_actions = [0.0] * len(ordered_action_vars)
+        return zero_actions
