@@ -88,6 +88,7 @@ def extract_observation_metadata(observations_list, buildings):
     building_obs = {}
 
     if len(observations_list)==1:
+        print(f'Assuming that observations is in a list')
         observations = observations_list[0]
     else:
         observations = observations_list
