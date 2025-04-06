@@ -1114,11 +1114,11 @@ class CityLearnEnv(Environment, Env):
         }, {
             'cost_function': 'daily_one_minus_load_factor_average',
             'value': CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, control_condition), window=24)[-1]/\
-                CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, baseline_condition), window=24)[-1],
+                CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, baseline_condition), window=24)[-1] if CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, baseline_condition), window=24)[-1] != 0 else float('nan'),
         },{
             'cost_function': 'monthly_one_minus_load_factor_average',
             'value': CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, control_condition), window=730)[-1]/\
-                CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, baseline_condition), window=730)[-1],
+                CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, baseline_condition), window=730)[-1] if CostFunction.one_minus_load_factor(get_net_electricity_consumption(self, baseline_condition), window=730)[-1] != 0 else float('nan'),
         }, {
             'cost_function': 'daily_peak_average',
             'value': CostFunction.peak(get_net_electricity_consumption(self, control_condition), window=24)[-1]/\
