@@ -337,13 +337,13 @@ class Building(Environment):
         However, if there are chargers and EVs, they need to charge per usual, so that consumption is added
         This is what allows to check if the control mechanism affects the grid balancing scheme for EVs for example.
         """
-
+        series_len = self.net_electricity_consumption.shape[0]
         return self.net_electricity_consumption - np.sum([
             self.cooling_storage_electricity_consumption,
             self.heating_storage_electricity_consumption,
             self.dhw_storage_electricity_consumption,
             self.electrical_storage_electricity_consumption,
-            self.__chargers_electricity_consumption
+            self.__chargers_electricity_consumption[:series_len] # need indexing because self.__chargers_electricity_consumption is the entire time series (including future) when there are no chargers, but other variables increase in length with each step. 
         ], axis=0)
 
     @property
