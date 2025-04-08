@@ -1,0 +1,44 @@
+name: thesis_windows
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.9
+  - ipykernel
+  - matplotlib
+  - numpy
+  - pandas
+  - pip
+  - psutil
+  - seaborn
+  - scikit-learn
+  - scipy
+  - tornado
+  - typing_extensions
+  - wheel
+  - pip:
+      - absl-py==2.2.0
+      - ale-py==0.10.2
+      - beautifulsoup4==4.13.3
+      - clarabel==0.10.0
+      - cloudpickle==3.1.1
+      - cvxpy==1.6.4
+      - ecos==2.0.14
+      - gymnasium==1.1.1
+      - opencv-python==4.11.0.86
+      - osqp==1.0.1
+      - protobuf==6.30.1
+      - pygame==2.6.1
+      - requests==2.32.3
+      - rich==13.9.4
+      - scs==3.2.7.post2
+      - simplejson==3.20.1
+      - soupsieve==2.6
+      - stable-baselines3==2.6.0
+      - sympy==1.13.1
+      - tensorboard==2.19.0
+      - torch==2.6.0
+      - tqdm==4.67.1
+      - urllib3==2.3.0
+      - werkzeug==3.1.3
